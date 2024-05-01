@@ -1,0 +1,7 @@
+
+# Executables
+dtc
+
+# Mix
+_build
+.elixir_ls
