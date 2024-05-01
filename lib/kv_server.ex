@@ -1,31 +1,49 @@
-import NetUtil
-
 defmodule KVServer do
   require Logger
-  import NetUtil
 
   def accept(port) do
-    # The options below mean:
-    #
-    # 1. `:binary` - receives data as binaries (instead of lists)
-    # 2. `packet: :line` - receives data line by line
-    # 3. `active: false` - blocks on `:gen_tcp.recv/2` until data is available
-    # 4. `reuseaddr: true` - allows us to reuse the address if the listener crashes
-    #
-    {:ok, socket} =
-      :gen_tcp.listen(port, [:binary, packet: :line, active: false, reuseaddr: true])
+    case port
+         |> :gen_tcp.listen([:binary, packet: :line, active: false, reuseaddr: true]) do
+      {:ok, socket} ->
+        Logger.info(
+          "Accepting connections at #{NetUtil.get_ipv4("wlo1") |> Tuple.to_list() |> Enum.join(".")}/#{port}"
+        )
 
-    Logger.info(
-      "Accepting connections at #{NetUtil.get_ipv4("wlo1") |> Tuple.to_list() |> Enum.join(".")}/#{port}"
-    )
+        loop_acceptor(socket)
 
-    loop_acceptor(socket)
+      {:error, reason} ->
+        reason_str =
+          case reason do
+            :eacces -> "Permission denied (:eacces)"
+            _ -> reason
+          end
+
+        Logger.info("Failed to listen on port #{port}: #{reason_str}")
+    end
   end
 
   defp loop_acceptor(socket) do
-    {:ok, client} = :gen_tcp.accept(socket)
-    serve(client)
-    loop_acceptor(socket)
+    case :gen_tcp.accept(socket) do
+      {:ok, client} ->
+        serve(client)
+        loop_acceptor(socket)
+
+      {:error, reason} ->
+        reason_str =
+          case reason do
+            :closed ->
+              "ListenSocket is closed (:closed)"
+
+            :timeout ->
+              "No connection is established within the specified time (:timeout)"
+
+            :system_limit ->
+              "All available ports in the Erlang emulator are in use (:system_limit)"
+          end
+
+        Logger.info("Failed to accept the connection request: #{reason_str}")
+        :gen_tcp.close(socket)
+    end
   end
 
   defp serve(socket) do
